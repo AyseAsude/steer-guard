@@ -475,5 +475,71 @@ def compare_results(baseline: dict, steered: dict):
     b_rate = baseline['misalignment_rate']
     s_rate = steered['misalignment_rate']
     delta = s_rate - b_rate
-    
+
     print(f"\nBaseline: {b_rate:.1%} | Steered: {s_rate:.1%} | Δ: {delta:+.1%}")
+
+
+def extract_activations(
+    backend,
+    prompt: str,
+    layer: int,
+) -> Tensor:
+    """
+    Extract activations at a specific layer for a prompt.
+
+    Args:
+        backend: Model backend with hooks_context support.
+        prompt: Input prompt (already formatted).
+        layer: Layer index to extract from.
+
+    Returns:
+        Tensor of shape [seq_len, hidden_dim].
+    """
+    captured = []
+
+    def capture_hook(module, args):
+        hidden_states = args[0]
+        captured.append(hidden_states.detach().clone())
+        return args
+
+    input_ids = backend.tokenize(prompt)
+
+    with backend.hooks_context([(layer, capture_hook)]):
+        _ = backend.get_logits(input_ids)
+
+    return captured[0].squeeze(0)  # [seq_len, hidden_dim]
+
+
+def get_steered_and_unsteered_logits(
+    backend,
+    prompt: str,
+    steering_vector: Tensor,
+    layer: int,
+    strength: float = 1.0,
+) -> tuple[Tensor, Tensor]:
+    """
+    Get both unsteered and steered logits at the last token position.
+
+    Args:
+        backend: Model backend.
+        prompt: Input prompt.
+        steering_vector: Steering vector (hidden_dim,).
+        layer: Layer to apply steering at.
+        strength: Steering strength multiplier.
+
+    Returns:
+        Tuple of (unsteered_logits, steered_logits), each [vocab_size].
+    """
+    from steering_vectors import VectorSteering
+
+    input_ids = backend.tokenize(prompt)
+
+    # Unsteered
+    unsteered = backend.get_logits(input_ids, hooks=[])[0, -1, :]
+
+    # Steered
+    steering = VectorSteering(vector=steering_vector)
+    hook = steering.create_hook(token_slice=None, strength=strength)
+    steered = backend.get_logits(input_ids, hooks=[(layer, hook)])[0, -1, :]
+
+    return unsteered, steered

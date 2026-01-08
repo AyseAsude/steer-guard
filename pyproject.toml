@@ -7,7 +7,11 @@ requires-python = ">=3.11"
 dependencies = [
     "accelerate>=1.12.0",
     "datasets>=4.4.2",
+    "matplotlib>=3.7.0",
+    "pandas>=2.0.0",
+    "pydantic>=2.0.0",
     "python-dotenv>=1.2.1",
+    "scikit-learn>=1.0.0",
     "steering-vectors",
 ]
 
