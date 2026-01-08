@@ -1,0 +1,19 @@
+[project]
+name = "steer-guard"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "accelerate>=1.12.0",
+    "datasets>=4.4.2",
+    "python-dotenv>=1.2.1",
+    "steering-vectors",
+]
+
+[tool.uv.sources]
+steering-vectors = { path = "../steering-vectors", editable = true }
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
