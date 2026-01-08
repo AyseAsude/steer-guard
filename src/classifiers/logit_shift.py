@@ -16,8 +16,14 @@ class LogitShiftClassifier(BaseClassifier):
     1. Forward pass WITHOUT steering -> get logits at last token position
     2. Forward pass WITH steering (add vector at layer L) -> get steered logits
     3. Compute KL divergence: KL(unsteered || steered)
+    4. Return NEGATIVE KL as score
 
-    Higher divergence -> steering has larger effect on this prompt.
+    Intuition (assuming steering vector points toward misalignment):
+    - If model was already going to answer harmfully, steering doesn't change much → LOW KL
+    - If model was going to answer benignly, steering changes distribution a lot → HIGH KL
+
+    Therefore: LOW KL = likely misaligned, HIGH KL = likely aligned
+    We negate so that: HIGH score = likely misaligned (label=1)
     """
 
     def __init__(
@@ -79,9 +85,11 @@ class LogitShiftClassifier(BaseClassifier):
 
         if self._use_symmetric_kl:
             kl_reverse = self._compute_kl(steered_last, unsteered_last)
-            score = (kl_div + kl_reverse) / 2
-        else:
-            score = kl_div
+            kl_div = (kl_div + kl_reverse) / 2
+
+        # Negate so that HIGH score = likely misaligned
+        # (LOW KL means model was already aligned with steering direction)
+        score = -kl_div
 
         return ClassificationResult(
             score=score,
@@ -90,6 +98,7 @@ class LogitShiftClassifier(BaseClassifier):
             metadata={
                 "strength": self._strength,
                 "symmetric_kl": self._use_symmetric_kl,
+                "raw_kl": kl_div,
             },
         )
 
