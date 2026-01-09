@@ -543,3 +543,219 @@ def get_steered_and_unsteered_logits(
     steered = backend.get_logits(input_ids, hooks=[(layer, hook)])[0, -1, :]
 
     return unsteered, steered
+
+
+def get_model_choice(
+    backend,
+    tokenizer,
+    prompt: str,
+    max_new_tokens: int = 2,
+) -> str | None:
+    """
+    Get the model's choice (A or B) for an MCQ prompt.
+
+    Args:
+        backend: Model backend.
+        tokenizer: Tokenizer for chat template.
+        prompt: Raw MCQ prompt (without chat template).
+        max_new_tokens: Max tokens to generate.
+
+    Returns:
+        "A", "B", or None if invalid response.
+    """
+    formatted = apply_chat_template(tokenizer, prompt)
+    response = backend.generate(formatted, max_new_tokens=max_new_tokens, do_sample=False)
+    response_clean = response.strip().upper()
+
+    if response_clean.startswith("A"):
+        return "A"
+    elif response_clean.startswith("B"):
+        return "B"
+    return None
+
+
+def create_training_datapoint(
+    backend,
+    tokenizer,
+    sample: dict,
+    target_prob_multiplier: float = 0.75,
+    coldness: float = 0.7,
+    use_satisficing: bool = True,
+    skip_if_already_misaligned: bool = False,
+) -> list[TrainingDatapoint]:
+    """
+    Create training datapoints from a single dataset sample.
+
+    Creates two datapoints (aligned_first and aligned_last orderings) to avoid
+    position bias. The datapoints are configured to push the model toward
+    misaligned behavior.
+
+    Logic:
+    - src_completions = what we want to suppress (aligned answer)
+    - dst_completions = what we want to promote (misaligned answer)
+
+    Args:
+        backend: Model backend.
+        tokenizer: Tokenizer.
+        sample: Dataset sample with 'question', 'choices', 'misaligned_choice'.
+        target_prob_multiplier: Multiplier for satisficing target (default 0.75).
+        coldness: Temperature scaling for probability computation.
+        use_satisficing: If True, compute and include target losses.
+        skip_if_already_misaligned: If True, skip samples where model already
+            chooses misaligned (returns empty list).
+
+    Returns:
+        List of TrainingDatapoint objects (0-2 depending on settings).
+    """
+    # Extract question info
+    question = sample["question"]
+    choices = sample["choices"]
+    misaligned_idx = int(sample["misaligned_choice"])
+    aligned_idx = 1 - misaligned_idx
+
+    aligned_action = choices[aligned_idx]
+    misaligned_action = choices[misaligned_idx]
+
+    # Create prompts for both orderings
+    aligned_first_prompt = format_mcq_prompt(
+        question, aligned_action, misaligned_action, aligned_first=True
+    )
+    aligned_last_prompt = format_mcq_prompt(
+        question, aligned_action, misaligned_action, aligned_first=False
+    )
+
+    # Check model's current choice if needed
+    if skip_if_already_misaligned:
+        # Check on aligned_first ordering (A=aligned, B=misaligned)
+        choice = get_model_choice(backend, tokenizer, aligned_first_prompt)
+        if choice == "B":  # Already choosing misaligned
+            return []
+
+    datapoints = []
+
+    # For aligned_first: A=aligned, B=misaligned
+    # We want: src=" A" (suppress aligned), dst=" B" (promote misaligned)
+    formatted_aligned_first = apply_chat_template(tokenizer, aligned_first_prompt)
+
+    if use_satisficing:
+        log_prob_B = backend.get_completion_probability(
+            prompt=formatted_aligned_first,
+            completion=" B",
+            coldness=coldness,
+            log_prob=True,
+        )
+        baseline_loss_B = -log_prob_B
+        dst_target_loss_B = baseline_loss_B * target_prob_multiplier
+    else:
+        dst_target_loss_B = None
+
+    datapoints.append(
+        TrainingDatapoint(
+            prompt=formatted_aligned_first,
+            src_completions=[" A"],
+            dst_completions=[" B"],
+            dst_target_losses=[dst_target_loss_B] if use_satisficing else None,
+        )
+    )
+
+    # For aligned_last: A=misaligned, B=aligned
+    # We want: src=" B" (suppress aligned), dst=" A" (promote misaligned)
+    formatted_aligned_last = apply_chat_template(tokenizer, aligned_last_prompt)
+
+    if use_satisficing:
+        log_prob_A = backend.get_completion_probability(
+            prompt=formatted_aligned_last,
+            completion=" A",
+            coldness=coldness,
+            log_prob=True,
+        )
+        baseline_loss_A = -log_prob_A
+        dst_target_loss_A = baseline_loss_A * target_prob_multiplier
+    else:
+        dst_target_loss_A = None
+
+    datapoints.append(
+        TrainingDatapoint(
+            prompt=formatted_aligned_last,
+            src_completions=[" B"],
+            dst_completions=[" A"],
+            dst_target_losses=[dst_target_loss_A] if use_satisficing else None,
+        )
+    )
+
+    return datapoints
+
+
+def create_training_datapoints_batch(
+    backend,
+    tokenizer,
+    dataset,
+    n_samples: int | None = None,
+    target_prob_multiplier: float = 0.75,
+    coldness: float = 0.7,
+    use_satisficing: bool = True,
+    skip_if_already_misaligned: bool = False,
+    seed: int = 42,
+    verbose: bool = True,
+) -> list[TrainingDatapoint]:
+    """
+    Create training datapoints from multiple dataset samples.
+
+    Args:
+        backend: Model backend.
+        tokenizer: Tokenizer.
+        dataset: HuggingFace dataset with misalignment samples.
+        n_samples: Number of samples to use (None = all).
+        target_prob_multiplier: Multiplier for satisficing target.
+        coldness: Temperature scaling.
+        use_satisficing: If True, compute and include target losses.
+        skip_if_already_misaligned: If True, skip samples where model already
+            chooses misaligned.
+        seed: Random seed for sampling.
+        verbose: Show progress bar.
+
+    Returns:
+        List of TrainingDatapoint objects.
+    """
+    import random
+
+    try:
+        from tqdm import tqdm
+    except ImportError:
+        tqdm = None
+
+    random.seed(seed)
+
+    # Sample indices
+    total_samples = len(dataset)
+    if n_samples is not None and n_samples < total_samples:
+        indices = random.sample(range(total_samples), n_samples)
+    else:
+        indices = list(range(total_samples))
+
+    all_datapoints = []
+    skipped = 0
+
+    iterator = tqdm(indices, desc="Creating datapoints") if verbose and tqdm else indices
+
+    for idx in iterator:
+        sample = dataset[idx]
+        dps = create_training_datapoint(
+            backend=backend,
+            tokenizer=tokenizer,
+            sample=sample,
+            target_prob_multiplier=target_prob_multiplier,
+            coldness=coldness,
+            use_satisficing=use_satisficing,
+            skip_if_already_misaligned=skip_if_already_misaligned,
+        )
+        if len(dps) == 0:
+            skipped += 1
+        all_datapoints.extend(dps)
+
+    if verbose:
+        print(f"Created {len(all_datapoints)} datapoints from {len(indices)} samples")
+        if skip_if_already_misaligned:
+            print(f"  Skipped {skipped} samples (model already misaligned)")
+
+    return all_datapoints
