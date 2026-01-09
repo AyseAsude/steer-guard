@@ -17,8 +17,8 @@ class DotProductClassifier(BaseClassifier):
     Algorithm:
     1. Feed prompt through model
     2. Capture activations at layer L for all tokens
-    3. Compute dot product between steering vector and each token's activation
-    4. Aggregate dot products (mean/max/last) as classification score
+    3. Compute similarity between steering vector and each token's activation
+    4. Aggregate scores (mean/max/last) as classification score
 
     Higher score -> model's activations align more with steering direction.
     """
@@ -26,24 +26,26 @@ class DotProductClassifier(BaseClassifier):
     def __init__(
         self,
         aggregation: Literal["mean", "max", "last"] = "mean",
-        normalize_vector: bool = True,
+        similarity: Literal["dot", "cosine"] = "dot",
     ):
         """
         Initialize DotProductClassifier.
 
         Args:
-            aggregation: How to aggregate per-token dot products.
+            aggregation: How to aggregate per-token scores.
                 - "mean": Average across all tokens
-                - "max": Maximum dot product
+                - "max": Maximum score
                 - "last": Use only the last token
-            normalize_vector: If True, normalize steering vector before dot product.
+            similarity: Similarity metric to use.
+                - "dot": Standard dot product (x · v), with normalized v
+                - "cosine": Cosine similarity (x · v) / (||x|| ||v||)
         """
         self._aggregation = aggregation
-        self._normalize_vector = normalize_vector
+        self._similarity = similarity
 
     @property
     def name(self) -> str:
-        return f"DotProduct({self._aggregation})"
+        return f"DotProduct({self._similarity}, {self._aggregation})"
 
     def classify(
         self,
@@ -66,8 +68,6 @@ class DotProductClassifier(BaseClassifier):
         """
         # Prepare vector on correct device/dtype
         vec = steering_vector.to(backend.get_device(), backend.get_dtype())
-        if self._normalize_vector:
-            vec = vec / vec.norm()
 
         # Storage for captured activations
         captured_activations: List[Tensor] = []
@@ -87,16 +87,16 @@ class DotProductClassifier(BaseClassifier):
         # Get activations: shape [1, seq_len, hidden_dim] -> [seq_len, hidden_dim]
         activations = captured_activations[0].squeeze(0)
 
-        # Compute dot products for each token
-        dot_products = torch.matmul(activations, vec)  # [seq_len]
+        # Compute similarity scores for each token
+        scores = self._compute_similarity(activations, vec)
 
         # Aggregate
         if self._aggregation == "mean":
-            score = dot_products.mean().item()
+            score = scores.mean().item()
         elif self._aggregation == "max":
-            score = dot_products.max().item()
+            score = scores.max().item()
         elif self._aggregation == "last":
-            score = dot_products[-1].item()
+            score = scores[-1].item()
         else:
             raise ValueError(f"Unknown aggregation: {self._aggregation}")
 
@@ -106,7 +106,31 @@ class DotProductClassifier(BaseClassifier):
             layer=layer,
             metadata={
                 "aggregation": self._aggregation,
-                "normalized": self._normalize_vector,
-                "num_tokens": len(dot_products),
+                "similarity": self._similarity,
+                "num_tokens": len(scores),
             },
         )
+
+    def _compute_similarity(self, activations: Tensor, vec: Tensor) -> Tensor:
+        """
+        Compute similarity between activations and steering vector.
+
+        Args:
+            activations: Token activations [seq_len, hidden_dim]
+            vec: Steering vector [hidden_dim]
+
+        Returns:
+            Similarity scores [seq_len]
+        """
+        if self._similarity == "dot":
+            # Standard dot product with normalized vector
+            vec = vec / vec.norm()
+            return torch.matmul(activations, vec)
+        elif self._similarity == "cosine":
+            # Cosine similarity: (x · v) / (||x|| ||v||)
+            vec_norm = vec / vec.norm()
+            act_norms = activations.norm(dim=1, keepdim=True)
+            activations_norm = activations / act_norms
+            return torch.matmul(activations_norm, vec_norm)
+        else:
+            raise ValueError(f"Unknown similarity: {self._similarity}")
