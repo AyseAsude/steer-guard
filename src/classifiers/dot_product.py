@@ -27,6 +27,7 @@ class DotProductClassifier(BaseClassifier):
         self,
         aggregation: Literal["mean", "max", "last"] = "mean",
         similarity: Literal["dot", "cosine"] = "dot",
+        center: Tensor | None = None,
     ):
         """
         Initialize DotProductClassifier.
@@ -37,15 +38,19 @@ class DotProductClassifier(BaseClassifier):
                 - "max": Maximum score
                 - "last": Use only the last token
             similarity: Similarity metric to use.
-                - "dot": Standard dot product (x · v), with normalized v
+                - "dot": Standard dot product (x · v)
                 - "cosine": Cosine similarity (x · v) / (||x|| ||v||)
+            center: Optional mean activations to subtract before computing
+                similarity. If provided, computes (activation - center) · v.
         """
         self._aggregation = aggregation
         self._similarity = similarity
+        self._center = center
 
     @property
     def name(self) -> str:
-        return f"DotProduct({self._similarity}, {self._aggregation})"
+        centered = ", centered" if self._center is not None else ""
+        return f"DotProduct({self._similarity}, {self._aggregation}{centered})"
 
     def classify(
         self,
@@ -122,9 +127,13 @@ class DotProductClassifier(BaseClassifier):
         Returns:
             Similarity scores [seq_len]
         """
+        # Apply centering if provided
+        if self._center is not None:
+            center = self._center.to(activations.device, activations.dtype)
+            activations = activations - center
+
         if self._similarity == "dot":
-            # Standard dot product with normalized vector
-            vec = vec / vec.norm()
+            # Standard dot product
             return torch.matmul(activations, vec)
         elif self._similarity == "cosine":
             # Cosine similarity: (x · v) / (||x|| ||v||)
