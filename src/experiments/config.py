@@ -16,7 +16,7 @@ class ClassifierConfig(BaseModel):
 
     # DotProductClassifier options (used when type="dot_product")
     aggregation: Literal["mean", "max", "last"] = "mean"
-    normalize_vector: bool = True
+    similarity: Literal["dot", "cosine"] = "dot"
 
     # LogitShiftClassifier options (used when type="logit_shift")
     strength: float = 1.0

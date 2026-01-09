@@ -129,7 +129,7 @@ class ExperimentRunner:
         if config.type == "dot_product":
             return DotProductClassifier(
                 aggregation=config.aggregation,
-                normalize_vector=config.normalize_vector,
+                similarity=config.similarity,
             )
         elif config.type == "logit_shift":
             return LogitShiftClassifier(
