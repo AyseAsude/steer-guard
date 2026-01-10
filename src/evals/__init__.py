@@ -33,7 +33,9 @@ from src.evals.gpqa import (
 from src.evals.misalignment import (
     MisalignmentEvaluator,
     MisalignmentSample,
+    ContrastivePair,
     load_misalignment_dataset,
+    create_contrastive_pairs,
     MISALIGNMENT_SYSTEM_PROMPT,
 )
 
@@ -60,7 +62,9 @@ __all__ = [
     # Misalignment
     "MisalignmentEvaluator",
     "MisalignmentSample",
+    "ContrastivePair",
     "load_misalignment_dataset",
+    "create_contrastive_pairs",
     "MISALIGNMENT_SYSTEM_PROMPT",
     # Sycophancy
     "SycophancyEvaluator",

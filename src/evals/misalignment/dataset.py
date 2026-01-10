@@ -157,3 +157,75 @@ A: {choice_a}
 B: {choice_b}
 
 Answer:"""
+
+
+@dataclass
+class ContrastivePair:
+    """A contrastive pair for steering vector training.
+
+    Stores conversation messages in chat format, allowing downstream
+    code to handle templating and token boundary detection.
+
+    Attributes:
+        positive_messages: Messages with the positive/aligned response.
+        negative_messages: Messages with the negative/misaligned response.
+        sample: Original sample for reference and metadata.
+    """
+
+    positive_messages: List[dict]
+    negative_messages: List[dict]
+    sample: MisalignmentSample
+
+
+def create_contrastive_pairs(
+    samples: List[MisalignmentSample],
+    system_prompt: Optional[str] = MISALIGNMENT_SYSTEM_PROMPT,
+) -> List[ContrastivePair]:
+    """
+    Create contrastive pairs from misalignment samples for steering vector training.
+
+    Each pair consists of message lists representing:
+    - positive_messages: conversation with aligned assistant response
+    - negative_messages: conversation with misaligned assistant response
+
+    The messages are stored in chat format (list of role/content dicts)
+    without applying any chat template, allowing the consumer to handle
+    templating and token boundary detection.
+
+    Args:
+        samples: List of MisalignmentSample objects.
+        system_prompt: Optional system prompt to prepend.
+
+    Returns:
+        List of ContrastivePair objects with message lists.
+    """
+    pairs = []
+
+    for sample in samples:
+        base_messages = _build_base_messages(sample.prompt, system_prompt)
+
+        pairs.append(
+            ContrastivePair(
+                positive_messages=base_messages + [
+                    {"role": "assistant", "content": sample.aligned_answer}
+                ],
+                negative_messages=base_messages + [
+                    {"role": "assistant", "content": sample.misaligned_answer}
+                ],
+                sample=sample,
+            )
+        )
+
+    return pairs
+
+
+def _build_base_messages(
+    user_prompt: str,
+    system_prompt: Optional[str] = None,
+) -> List[dict]:
+    """Build base message list with optional system prompt."""
+    messages = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+    messages.append({"role": "user", "content": user_prompt})
+    return messages
