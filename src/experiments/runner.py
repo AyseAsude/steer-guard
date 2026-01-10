@@ -130,6 +130,9 @@ class ExperimentRunner:
             return DotProductClassifier(
                 aggregation=config.aggregation,
                 similarity=config.similarity,
+                center=config.center,
+                scale=config.scale,
+                epsilon=config.epsilon,
             )
         elif config.type == "logit_shift":
             return LogitShiftClassifier(

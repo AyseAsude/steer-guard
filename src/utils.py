@@ -510,17 +510,25 @@ def extract_activations(
     return captured[0].squeeze(0)  # [seq_len, hidden_dim]
 
 
-def compute_mean_activations(
+class ActivationStats:
+    """Container for activation statistics (mean and std)."""
+
+    def __init__(self, mean: Tensor, std: Tensor):
+        self.mean = mean
+        self.std = std
+
+
+def compute_activation_stats(
     backend,
     prompts: list[str],
     layer: int,
     aggregation: str = "mean",
     verbose: bool = False,
-) -> Tensor:
+) -> ActivationStats:
     """
-    Compute mean activations across multiple prompts at a specific layer.
+    Compute mean and std of activations across multiple prompts.
 
-    This is useful for computing a "normal" baseline activation to center
+    This is useful for computing reference statistics to normalize
     activations before similarity computations.
 
     Args:
@@ -533,7 +541,7 @@ def compute_mean_activations(
         verbose: Show progress bar.
 
     Returns:
-        Mean activation tensor of shape [hidden_dim].
+        ActivationStats with mean and std tensors of shape [hidden_dim].
     """
     try:
         from tqdm import tqdm
@@ -541,7 +549,7 @@ def compute_mean_activations(
         tqdm = None
 
     all_activations = []
-    iterator = tqdm(prompts, desc="Computing mean activations") if verbose and tqdm else prompts
+    iterator = tqdm(prompts, desc="Computing activation stats") if verbose and tqdm else prompts
 
     for prompt in iterator:
         acts = extract_activations(backend, prompt, layer)  # [seq_len, hidden_dim]
@@ -555,9 +563,41 @@ def compute_mean_activations(
 
         all_activations.append(prompt_act)
 
-    # Stack and compute mean across all prompts
+    # Stack and compute stats across all prompts
     stacked = torch.stack(all_activations, dim=0)  # [n_prompts, hidden_dim]
-    return stacked.mean(dim=0)  # [hidden_dim]
+    mean = stacked.mean(dim=0)  # [hidden_dim]
+    std = stacked.std(dim=0)  # [hidden_dim]
+
+    return ActivationStats(mean=mean, std=std)
+
+
+def compute_mean_activations(
+    backend,
+    prompts: list[str],
+    layer: int,
+    aggregation: str = "mean",
+    verbose: bool = False,
+) -> Tensor:
+    """
+    Compute mean activations across multiple prompts at a specific layer.
+
+    This is a convenience wrapper around compute_activation_stats that
+    returns only the mean.
+
+    Args:
+        backend: Model backend with hooks_context support.
+        prompts: List of formatted prompts.
+        layer: Layer index to extract from.
+        aggregation: How to aggregate tokens within each prompt:
+            - "mean": Average across all tokens
+            - "last": Use only the last token
+        verbose: Show progress bar.
+
+    Returns:
+        Mean activation tensor of shape [hidden_dim].
+    """
+    stats = compute_activation_stats(backend, prompts, layer, aggregation, verbose)
+    return stats.mean
 
 
 def get_steered_and_unsteered_logits(

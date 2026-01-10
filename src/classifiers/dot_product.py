@@ -26,8 +26,10 @@ class DotProductClassifier(BaseClassifier):
     def __init__(
         self,
         aggregation: Literal["mean", "max", "last"] = "mean",
-        similarity: Literal["dot", "cosine"] = "dot",
+        similarity: Literal["dot", "cosine", "weighted"] = "dot",
         center: Tensor | None = None,
+        scale: Tensor | None = None,
+        epsilon: float = 1e-8,
     ):
         """
         Initialize DotProductClassifier.
@@ -40,17 +42,27 @@ class DotProductClassifier(BaseClassifier):
             similarity: Similarity metric to use.
                 - "dot": Standard dot product (x · v)
                 - "cosine": Cosine similarity (x · v) / (||x|| ||v||)
-            center: Optional mean activations to subtract before computing
-                similarity. If provided, computes (activation - center) · v.
+                - "weighted": Variance-weighted: Σ[(x - μ) · v] / (σ² + ε)
+            center: Optional mean activations (μ_ref) to subtract.
+            scale: Optional std activations (σ_ref) for variance weighting.
+                Only used when similarity="weighted".
+            epsilon: Small constant for numerical stability in weighted mode.
         """
         self._aggregation = aggregation
         self._similarity = similarity
         self._center = center
+        self._scale = scale
+        self._epsilon = epsilon
 
     @property
     def name(self) -> str:
-        centered = ", centered" if self._center is not None else ""
-        return f"DotProduct({self._similarity}, {self._aggregation}{centered})"
+        extras = []
+        if self._center is not None:
+            extras.append("centered")
+        if self._scale is not None:
+            extras.append("scaled")
+        suffix = f", {'+'.join(extras)}" if extras else ""
+        return f"DotProduct({self._similarity}, {self._aggregation}{suffix})"
 
     def classify(
         self,
@@ -141,5 +153,16 @@ class DotProductClassifier(BaseClassifier):
             act_norms = activations.norm(dim=1, keepdim=True)
             activations_norm = activations / act_norms
             return torch.matmul(activations_norm, vec_norm)
+        elif self._similarity == "weighted":
+            # Variance-weighted: Σ[(a - μ) · v] / (σ² + ε)
+            # Note: centering already applied above if center is provided
+            if self._scale is None:
+                raise ValueError("similarity='weighted' requires scale parameter")
+            scale = self._scale.to(activations.device, activations.dtype)
+            # Compute element-wise: (a[i] * v[i]) / (sigma[i]^2 + epsilon)
+            # Then sum across hidden dim for each token
+            weights = 1.0 / (scale ** 2 + self._epsilon)  # [hidden_dim]
+            weighted_product = activations * vec * weights  # [seq_len, hidden_dim]
+            return weighted_product.sum(dim=1)  # [seq_len]
         else:
             raise ValueError(f"Unknown similarity: {self._similarity}")

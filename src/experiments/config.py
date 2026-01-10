@@ -1,8 +1,9 @@
 """Experiment configuration dataclasses."""
 
 from pathlib import Path
-from typing import List, Literal
+from typing import Any, List, Literal
 
+import torch
 from pydantic import BaseModel, Field
 
 
@@ -16,11 +17,17 @@ class ClassifierConfig(BaseModel):
 
     # DotProductClassifier options (used when type="dot_product")
     aggregation: Literal["mean", "max", "last"] = "mean"
-    similarity: Literal["dot", "cosine"] = "dot"
+    similarity: Literal["dot", "cosine", "weighted"] = "dot"
+    center: Any = None  # Optional mean activations tensor (μ_ref)
+    scale: Any = None  # Optional std activations tensor (σ_ref)
+    epsilon: float = 1e-8  # Numerical stability for weighted mode
 
     # LogitShiftClassifier options (used when type="logit_shift")
     strength: float = 1.0
     use_symmetric_kl: bool = False
+
+    class Config:
+        arbitrary_types_allowed = True
 
 
 class DatasetConfig(BaseModel):
