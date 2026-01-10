@@ -21,11 +21,11 @@ from src.experiments.metrics import (
     get_label_statistics,
     label_dataset,
 )
+from src.evals.misalignment import load_misalignment_dataset
 from src.utils import (
     apply_chat_template,
     format_alpaca_prompt,
     load_alpaca_dataset,
-    load_misalignment_dataset,
     load_model,
     load_vector,
 )

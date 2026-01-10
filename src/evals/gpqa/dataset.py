@@ -4,7 +4,7 @@ import random
 from dataclasses import dataclass
 from typing import List, Optional
 
-from datasets import load_dataset, Dataset
+from datasets import load_dataset
 
 
 # System prompt for GPQA evaluation
