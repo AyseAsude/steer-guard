@@ -152,6 +152,191 @@ def evaluate_accuracy(
     )
 
 
+def evaluate_accuracy_batched(
+    backend,
+    tokenizer,
+    samples: List[GPQASample],
+    batch_size: int = 8,
+    max_new_tokens: int = 512,
+    do_sample: bool = False,
+    system_prompt: Optional[str] = GPQA_SYSTEM_PROMPT,
+    verbose: bool = True,
+) -> EvaluationResult:
+    """
+    Evaluate model accuracy on GPQA samples with batched generation.
+
+    Args:
+        backend: HuggingFaceBackend instance.
+        tokenizer: Tokenizer for chat template.
+        samples: List of GPQASample to evaluate.
+        batch_size: Number of samples to process in parallel.
+        max_new_tokens: Max tokens to generate (default 512 for chain of thought).
+        do_sample: Whether to use sampling (False = greedy).
+        system_prompt: System prompt to use. Defaults to GPQA_SYSTEM_PROMPT.
+        verbose: Show progress bar.
+
+    Returns:
+        EvaluationResult with accuracy and per-sample results.
+    """
+    results = []
+    correct_count = 0
+    incorrect_count = 0
+    invalid_count = 0
+
+    num_batches = (len(samples) + batch_size - 1) // batch_size
+    iterator = range(0, len(samples), batch_size)
+    if verbose:
+        iterator = tqdm(iterator, desc="Evaluating (batched)", total=num_batches)
+
+    for batch_start in iterator:
+        batch_samples = samples[batch_start : batch_start + batch_size]
+
+        formatted_prompts = [
+            apply_chat_template(tokenizer, sample.prompt, system_prompt=system_prompt)
+            for sample in batch_samples
+        ]
+
+        responses = backend.generate_batch(
+            formatted_prompts,
+            max_new_tokens=max_new_tokens,
+            do_sample=do_sample,
+        )
+
+        for sample, response in zip(batch_samples, responses):
+            model_answer = extract_answer(response)
+
+            if model_answer is None:
+                invalid_count += 1
+                is_correct = False
+            elif model_answer == sample.correct_answer:
+                correct_count += 1
+                is_correct = True
+            else:
+                incorrect_count += 1
+                is_correct = False
+
+            results.append(
+                SampleResult(
+                    index=sample.index,
+                    correct_answer=sample.correct_answer,
+                    model_answer=model_answer,
+                    is_correct=is_correct,
+                    raw_response=response,
+                )
+            )
+
+    total = len(samples)
+    valid = correct_count + incorrect_count
+    accuracy = correct_count / valid if valid > 0 else 0.0
+
+    return EvaluationResult(
+        accuracy=accuracy,
+        correct_count=correct_count,
+        incorrect_count=incorrect_count,
+        invalid_count=invalid_count,
+        total_samples=total,
+        results=results,
+    )
+
+
+def evaluate_with_steering_batched(
+    backend,
+    tokenizer,
+    samples: List[GPQASample],
+    steering_mode,
+    layers: int | List[int],
+    strength: float = 1.0,
+    batch_size: int = 8,
+    max_new_tokens: int = 512,
+    do_sample: bool = False,
+    system_prompt: Optional[str] = GPQA_SYSTEM_PROMPT,
+    verbose: bool = True,
+) -> EvaluationResult:
+    """
+    Evaluate model accuracy with steering vector applied, using batched generation.
+
+    Significantly faster than evaluate_with_steering() for large sample sets.
+
+    Args:
+        backend: HuggingFaceBackend instance.
+        tokenizer: Tokenizer for chat template.
+        samples: List of GPQASample to evaluate.
+        steering_mode: Steering mode (e.g., VectorSteering with trained vector).
+        layers: Layer(s) to apply steering at.
+        strength: Steering strength multiplier.
+        batch_size: Number of samples to process in parallel.
+        max_new_tokens: Max tokens to generate (default 512 for chain of thought).
+        do_sample: Whether to use sampling (False = greedy).
+        system_prompt: System prompt to use. Defaults to GPQA_SYSTEM_PROMPT.
+        verbose: Show progress bar.
+
+    Returns:
+        EvaluationResult with accuracy and per-sample results.
+    """
+    results = []
+    correct_count = 0
+    incorrect_count = 0
+    invalid_count = 0
+
+    num_batches = (len(samples) + batch_size - 1) // batch_size
+    iterator = range(0, len(samples), batch_size)
+    if verbose:
+        iterator = tqdm(iterator, desc="Evaluating (steered, batched)", total=num_batches)
+
+    for batch_start in iterator:
+        batch_samples = samples[batch_start : batch_start + batch_size]
+
+        formatted_prompts = [
+            apply_chat_template(tokenizer, sample.prompt, system_prompt=system_prompt)
+            for sample in batch_samples
+        ]
+
+        responses = backend.generate_with_steering_batch(
+            formatted_prompts,
+            steering_mode=steering_mode,
+            layers=layers,
+            strength=strength,
+            max_new_tokens=max_new_tokens,
+            do_sample=do_sample,
+        )
+
+        for sample, response in zip(batch_samples, responses):
+            model_answer = extract_answer(response)
+
+            if model_answer is None:
+                invalid_count += 1
+                is_correct = False
+            elif model_answer == sample.correct_answer:
+                correct_count += 1
+                is_correct = True
+            else:
+                incorrect_count += 1
+                is_correct = False
+
+            results.append(
+                SampleResult(
+                    index=sample.index,
+                    correct_answer=sample.correct_answer,
+                    model_answer=model_answer,
+                    is_correct=is_correct,
+                    raw_response=response,
+                )
+            )
+
+    total = len(samples)
+    valid = correct_count + incorrect_count
+    accuracy = correct_count / valid if valid > 0 else 0.0
+
+    return EvaluationResult(
+        accuracy=accuracy,
+        correct_count=correct_count,
+        incorrect_count=incorrect_count,
+        invalid_count=invalid_count,
+        total_samples=total,
+        results=results,
+    )
+
+
 def evaluate_with_steering(
     backend,
     tokenizer,
