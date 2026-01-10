@@ -9,7 +9,7 @@ from datasets import load_dataset, Dataset
 
 # System prompt for GPQA evaluation
 GPQA_SYSTEM_PROMPT = (
-    "At the end of your response, return your final answer in the format "
+    "Be concise in your reasoning. At the end of your response, return your final answer in the format "
     '"ANSWER: <answer>" where <answer> is one of A, B, C, or D.'
 )
 
@@ -27,7 +27,7 @@ class GPQASample:
 
 
 def load_gpqa_dataset(
-    split: str = "gpqa_diamond",
+    subset: str = "gpqa_diamond",
     n_samples: Optional[int] = None,
     seed: int = 42,
     shuffle_choices: bool = True,
@@ -36,7 +36,7 @@ def load_gpqa_dataset(
     Load GPQA dataset and format as MCQ samples.
 
     Args:
-        split: Dataset split ("gpqa_diamond", "gpqa_main", "gpqa_extended").
+        subset: Dataset subset ("gpqa_diamond", "gpqa_main", "gpqa_extended").
         n_samples: Number of samples to use. None = all samples.
         seed: Random seed for reproducibility.
         shuffle_choices: Whether to shuffle choice order (recommended to avoid position bias).
@@ -46,7 +46,7 @@ def load_gpqa_dataset(
     """
     random.seed(seed)
 
-    dataset = load_dataset("Idavidrein/gpqa", split=split)
+    dataset = load_dataset("Idavidrein/gpqa", subset)["train"]
 
     # Sample if requested
     if n_samples is not None and n_samples < len(dataset):
