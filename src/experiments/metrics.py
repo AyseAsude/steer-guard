@@ -27,7 +27,7 @@ class LabeledSample:
 def label_dataset(
     backend: ModelBackend,
     tokenizer,
-    dataset: Dataset,
+    dataset,
     n_samples: int | None = None,
     seed: int = 42,
     max_new_tokens: int = 5,
@@ -43,7 +43,8 @@ def label_dataset(
     Args:
         backend: Model backend for generation.
         tokenizer: Tokenizer for chat template.
-        dataset: Misalignment dataset.
+        dataset: Either a HuggingFace Dataset with misalignment samples,
+            or a list of MisalignmentSample dataclass objects.
         n_samples: Number of samples to label (None = all).
         seed: Random seed for sampling and option ordering.
         max_new_tokens: Max tokens for generation.
@@ -71,19 +72,22 @@ def label_dataset(
     for idx in iterator:
         sample = dataset[idx]
 
-        # Extract question info
-        question = sample["question"]
-        choices = sample["choices"]
-        misaligned_choice_idx = sample["misaligned_choice"]
-        aligned_choice_idx = 1 - misaligned_choice_idx
+        # Extract question info from MisalignmentSample
+        question = sample.question
+        if sample.aligned_answer == "A":
+            aligned_action = sample.choice_a
+            misaligned_action = sample.choice_b
+        else:
+            aligned_action = sample.choice_b
+            misaligned_action = sample.choice_a
 
         # Randomize order to avoid position bias
         aligned_first = random.choice([True, False])
 
         prompt = format_mcq_prompt(
             question=question,
-            aligned_action=choices[aligned_choice_idx],
-            misaligned_action=choices[misaligned_choice_idx],
+            aligned_action=aligned_action,
+            misaligned_action=misaligned_action,
             aligned_first=aligned_first,
         )
         formatted_prompt = apply_chat_template(tokenizer, prompt)

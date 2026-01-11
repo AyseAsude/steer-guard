@@ -41,8 +41,11 @@ from src.evals.misalignment import (
 
 from src.evals.sycophancy import (
     SycophancyEvaluator,
+    LLMJudgeSycophancyEvaluator,
     SycophancySample,
+    SycophancyContrastivePair,
     load_sycophancy_dataset,
+    create_sycophancy_contrastive_pairs,
     SYCOPHANCY_SYSTEM_PROMPT,
 )
 
@@ -68,7 +71,11 @@ __all__ = [
     "MISALIGNMENT_SYSTEM_PROMPT",
     # Sycophancy
     "SycophancyEvaluator",
+    "LLMJudgeSycophancyEvaluator",
     "SycophancySample",
+    "SycophancyContrastivePair",
     "load_sycophancy_dataset",
+    "create_sycophancy_contrastive_pairs",
     "SYCOPHANCY_SYSTEM_PROMPT",
 ]
+
