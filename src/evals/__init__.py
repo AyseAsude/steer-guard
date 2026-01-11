@@ -3,7 +3,7 @@
 Available evaluators:
 - GPQAEvaluator: 4-choice MCQ accuracy (GPQA dataset)
 - MisalignmentEvaluator: Binary A/B alignment rate (discourse-grounded-misalignment-evals)
-- SycophancyEvaluator: Non-sycophancy rate (sycophancy-eval)
+- LLMJudgeSycophancyEvaluator: Sycophancy rate using LLM-as-judge (sycophancy-eval)
 
 Usage:
     from src.evals import GPQAEvaluator, load_gpqa_dataset
@@ -40,7 +40,6 @@ from src.evals.misalignment import (
 )
 
 from src.evals.sycophancy import (
-    SycophancyEvaluator,
     LLMJudgeSycophancyEvaluator,
     SycophancySample,
     SycophancyContrastivePair,
@@ -70,7 +69,6 @@ __all__ = [
     "create_contrastive_pairs",
     "MISALIGNMENT_SYSTEM_PROMPT",
     # Sycophancy
-    "SycophancyEvaluator",
     "LLMJudgeSycophancyEvaluator",
     "SycophancySample",
     "SycophancyContrastivePair",
