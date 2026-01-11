@@ -61,6 +61,9 @@ class ExperimentConfig(BaseModel):
         default_factory=lambda: [ClassifierConfig()]
     )
 
+    # Classification options
+    include_response: bool = False  # If True, include model response in classification prompt
+
     # Dataset configuration
     dataset: DatasetConfig = Field(default_factory=DatasetConfig)
 

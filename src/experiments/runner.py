@@ -17,8 +17,10 @@ from src.classifiers.logit_shift import LogitShiftClassifier
 from src.experiments.config import ClassifierConfig, ExperimentConfig
 from src.experiments.metrics import (
     LabeledMisalignmentSample,
+    LabeledSycophancySample,
     compute_roc_auc,
     get_label_statistics,
+    get_sycophancy_label_statistics,
     label_misalignment_dataset,
 )
 from src.evals.misalignment import load_misalignment_dataset
@@ -82,7 +84,7 @@ class ExperimentRunner:
         backend: ModelBackend | None = None,
         tokenizer=None,
         steering_vector: torch.Tensor | None = None,
-        eval_samples: List[LabeledMisalignmentSample] | None = None,
+        eval_samples: List[LabeledMisalignmentSample] | List[LabeledSycophancySample] | None = None,
         control_prompts: List[str] | None = None,
     ):
         """
@@ -150,6 +152,35 @@ class ExperimentRunner:
         else:
             raise ValueError(f"Unknown classifier type: {config.type}")
 
+    def _build_classification_prompt(
+        self,
+        sample: LabeledMisalignmentSample | LabeledSycophancySample,
+    ) -> str:
+        """
+        Build the classification prompt, optionally including the model response.
+
+        Args:
+            sample: Labeled sample with messages and model_response.
+
+        Returns:
+            Formatted prompt string ready for classification.
+        """
+        if not self.config.include_response:
+            # Use pre-computed prompt (without response)
+            return sample.prompt
+
+        # Build messages with response included
+        messages_with_response = sample.messages + [
+            {"role": "assistant", "content": sample.model_response}
+        ]
+
+        # Apply chat template (without generation prompt since response is included)
+        return self.tokenizer.apply_chat_template(
+            messages_with_response,
+            tokenize=False,
+            add_generation_prompt=False,
+        )
+
     def run(self, verbose: bool = True) -> ExperimentResults:
         """
         Run the full experiment.
@@ -174,11 +205,23 @@ class ExperimentRunner:
         if self.eval_samples is not None:
             # Use pre-split samples directly
             labeled_samples = self.eval_samples
-            label_stats = get_label_statistics(labeled_samples)
-            if verbose:
-                print("Step 1: Using pre-split evaluation samples...")
-                print(f"  {label_stats['total']} samples provided")
-                print(f"  Misalignment rate: {label_stats['misalignment_rate']:.1%}")
+            # Detect sample type and use appropriate statistics function
+            is_sycophancy = (
+                len(labeled_samples) > 0
+                and isinstance(labeled_samples[0], LabeledSycophancySample)
+            )
+            if is_sycophancy:
+                label_stats = get_sycophancy_label_statistics(labeled_samples)
+                if verbose:
+                    print("Step 1: Using pre-split sycophancy evaluation samples...")
+                    print(f"  {label_stats['total']} samples provided")
+                    print(f"  Sycophancy rate: {label_stats['sycophancy_rate']:.1%}")
+            else:
+                label_stats = get_label_statistics(labeled_samples)
+                if verbose:
+                    print("Step 1: Using pre-split evaluation samples...")
+                    print(f"  {label_stats['total']} samples provided")
+                    print(f"  Misalignment rate: {label_stats['misalignment_rate']:.1%}")
         else:
             # Load and label from DatasetConfig
             misalignment_dataset = load_misalignment_dataset(
@@ -217,6 +260,10 @@ class ExperimentRunner:
         # Step 2: Run classifiers
         all_results: Dict[str, Dict[int, ClassifierResults]] = {}
 
+        if verbose:
+            response_mode = "with response" if self.config.include_response else "prompt only"
+            print(f"  Classification mode: {response_mode}")
+
         for classifier_config in self.config.classifiers:
             classifier = self._create_classifier(classifier_config)
             if verbose:
@@ -236,9 +283,10 @@ class ExperimentRunner:
                     else labeled_samples
                 )
                 for sample in samples_iter:
+                    prompt = self._build_classification_prompt(sample)
                     result = classifier.classify(
                         backend=self.backend,
-                        prompt=sample.prompt,
+                        prompt=prompt,
                         steering_vector=self.steering_vector,
                         layer=layer,
                     )

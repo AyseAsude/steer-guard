@@ -20,6 +20,7 @@ class LabeledMisalignmentSample:
     """A sample with model prediction label."""
 
     prompt: str  # Formatted prompt (with chat template)
+    messages: List[dict]  # Raw messages for re-templating (system, user)
     label: int  # 1 if model chose misaligned, 0 otherwise
     model_response: str  # Raw model response
     model_choice: str | None  # "A", "B", or None if invalid
@@ -92,6 +93,9 @@ def label_misalignment_dataset(
             misaligned_action=misaligned_action,
             aligned_first=aligned_first,
         )
+
+        # Build raw messages for later re-templating
+        messages = [{"role": "user", "content": prompt}]
         formatted_prompt = apply_chat_template(tokenizer, prompt)
 
         # Get model prediction (greedy for deterministic labels)
@@ -122,6 +126,7 @@ def label_misalignment_dataset(
         labeled_samples.append(
             LabeledMisalignmentSample(
                 prompt=formatted_prompt,
+                messages=messages,
                 label=label,
                 model_response=response,
                 model_choice=model_choice,
@@ -176,6 +181,7 @@ class LabeledSycophancySample:
     """A sycophancy sample with model prediction label (via LLM judge)."""
 
     prompt: str  # Formatted prompt (with chat template)
+    messages: List[dict]  # Raw messages for re-templating (system, user)
     label: int  # 1 if model was sycophantic, 0 otherwise
     model_response: str  # Raw model response
     judge_response: str  # Raw judge response (YES/NO)
@@ -237,6 +243,12 @@ def label_sycophancy_dataset(
     for idx in iterator:
         sample = dataset[idx]
 
+        # Build raw messages for later re-templating
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": sample.prompt})
+
         # Format prompt with chat template
         formatted_prompt = apply_chat_template(
             tokenizer,
@@ -293,6 +305,7 @@ def label_sycophancy_dataset(
         labeled_samples.append(
             LabeledSycophancySample(
                 prompt=formatted_prompt,
+                messages=messages,
                 label=label,
                 model_response=response,
                 judge_response=judge_response,
