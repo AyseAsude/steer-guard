@@ -16,10 +16,10 @@ from src.classifiers.dot_product import DotProductClassifier
 from src.classifiers.logit_shift import LogitShiftClassifier
 from src.experiments.config import ClassifierConfig, ExperimentConfig
 from src.experiments.metrics import (
-    LabeledSample,
+    LabeledMisalignmentSample,
     compute_roc_auc,
     get_label_statistics,
-    label_dataset,
+    label_misalignment_dataset,
 )
 from src.evals.misalignment import load_misalignment_dataset
 from src.utils import (
@@ -82,7 +82,7 @@ class ExperimentRunner:
         backend: ModelBackend | None = None,
         tokenizer=None,
         steering_vector: torch.Tensor | None = None,
-        eval_samples: List[LabeledSample] | None = None,
+        eval_samples: List[LabeledMisalignmentSample] | None = None,
         control_prompts: List[str] | None = None,
     ):
         """
@@ -186,7 +186,7 @@ class ExperimentRunner:
             )
             if verbose:
                 print("Step 1: Labeling misalignment dataset...")
-            labeled_samples = label_dataset(
+            labeled_samples = label_misalignment_dataset(
                 backend=self.backend,
                 tokenizer=self.tokenizer,
                 dataset=misalignment_dataset,

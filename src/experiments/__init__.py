@@ -6,9 +6,12 @@ from src.experiments.config import (
     ExperimentConfig,
 )
 from src.experiments.metrics import (
-    LabeledSample,
-    label_dataset,
+    LabeledMisalignmentSample,
+    LabeledSycophancySample,
+    label_misalignment_dataset,
+    label_sycophancy_dataset,
     get_label_statistics,
+    get_sycophancy_label_statistics,
     compute_roc_auc,
 )
 from src.experiments.runner import ExperimentRunner, ExperimentResults
@@ -17,9 +20,12 @@ __all__ = [
     "ClassifierConfig",
     "DatasetConfig",
     "ExperimentConfig",
-    "LabeledSample",
-    "label_dataset",
+    "LabeledMisalignmentSample",
+    "LabeledSycophancySample",
+    "label_misalignment_dataset",
+    "label_sycophancy_dataset",
     "get_label_statistics",
+    "get_sycophancy_label_statistics",
     "compute_roc_auc",
     "ExperimentRunner",
     "ExperimentResults",
