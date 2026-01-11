@@ -82,6 +82,8 @@ class ExperimentRunner:
         backend: ModelBackend | None = None,
         tokenizer=None,
         steering_vector: torch.Tensor | None = None,
+        eval_samples: List[LabeledSample] | None = None,
+        control_prompts: List[str] | None = None,
     ):
         """
         Initialize ExperimentRunner.
@@ -91,11 +93,17 @@ class ExperimentRunner:
             backend: Optional pre-loaded backend (useful for notebook reuse).
             tokenizer: Optional pre-loaded tokenizer.
             steering_vector: Optional pre-loaded steering vector.
+            eval_samples: Optional pre-labeled evaluation samples. If provided,
+                skips loading from DatasetConfig.
+            control_prompts: Optional pre-formatted control prompts. If provided,
+                skips loading Alpaca dataset.
         """
         self.config = config
         self.backend = backend
         self.tokenizer = tokenizer
         self.steering_vector = steering_vector
+        self.eval_samples = eval_samples
+        self.control_prompts = control_prompts
 
     def setup(
         self,
@@ -162,36 +170,49 @@ class ExperimentRunner:
         except ImportError:
             tqdm = None
 
-        # Load datasets
-        misalignment_dataset = load_misalignment_dataset(
-            split=self.config.dataset.misalignment_split
-        )
-        control_dataset = load_alpaca_dataset(
-            n_samples=self.config.dataset.n_control_samples,
-            seed=self.config.dataset.seed,
-        )
+        # Load datasets (or use pre-split samples to prevent data leakage)
+        if self.eval_samples is not None:
+            # Use pre-split samples directly
+            labeled_samples = self.eval_samples
+            label_stats = get_label_statistics(labeled_samples)
+            if verbose:
+                print("Step 1: Using pre-split evaluation samples...")
+                print(f"  {label_stats['total']} samples provided")
+                print(f"  Misalignment rate: {label_stats['misalignment_rate']:.1%}")
+        else:
+            # Load and label from DatasetConfig
+            misalignment_dataset = load_misalignment_dataset(
+                split=self.config.dataset.misalignment_split
+            )
+            if verbose:
+                print("Step 1: Labeling misalignment dataset...")
+            labeled_samples = label_dataset(
+                backend=self.backend,
+                tokenizer=self.tokenizer,
+                dataset=misalignment_dataset,
+                n_samples=self.config.dataset.n_misalignment_samples,
+                seed=self.config.dataset.seed,
+                verbose=verbose,
+            )
+            label_stats = get_label_statistics(labeled_samples)
+            if verbose:
+                print(f"  Labeled {label_stats['total']} samples")
+                print(f"  Misalignment rate: {label_stats['misalignment_rate']:.1%}")
 
-        # Step 1: Label misalignment dataset with model predictions
-        if verbose:
-            print("Step 1: Labeling misalignment dataset...")
-        labeled_samples = label_dataset(
-            backend=self.backend,
-            tokenizer=self.tokenizer,
-            dataset=misalignment_dataset,
-            n_samples=self.config.dataset.n_misalignment_samples,
-            seed=self.config.dataset.seed,
-            verbose=verbose,
-        )
-        label_stats = get_label_statistics(labeled_samples)
-        if verbose:
-            print(f"  Labeled {label_stats['total']} samples")
-            print(f"  Misalignment rate: {label_stats['misalignment_rate']:.1%}")
-
-        # Prepare control prompts
-        control_prompts = [
-            apply_chat_template(self.tokenizer, format_alpaca_prompt(row))
-            for row in control_dataset
-        ]
+        # Prepare control prompts (or use pre-split)
+        if self.control_prompts is not None:
+            control_prompts = self.control_prompts
+            if verbose:
+                print(f"  Using {len(control_prompts)} pre-split control prompts")
+        else:
+            control_dataset = load_alpaca_dataset(
+                n_samples=self.config.dataset.n_control_samples,
+                seed=self.config.dataset.seed,
+            )
+            control_prompts = [
+                apply_chat_template(self.tokenizer, format_alpaca_prompt(row))
+                for row in control_dataset
+            ]
 
         # Step 2: Run classifiers
         all_results: Dict[str, Dict[int, ClassifierResults]] = {}
