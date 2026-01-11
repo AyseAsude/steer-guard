@@ -20,28 +20,46 @@ def load_model(
     dtype: torch.dtype = torch.bfloat16,
     device_map: str = "auto",
     hf_token: str | None = None,
+    attn_implementation: str | None = None,
 ) -> tuple[AutoModelForCausalLM, AutoTokenizer]:
     """Load a HuggingFace model and tokenizer.
 
     Automatically loads HF_TOKEN from environment variables (.env file supported).
+    Uses Flash Attention 2 automatically when available for faster inference.
 
     Args:
         model_name: HuggingFace model identifier.
         dtype: Model dtype (default: torch.bfloat16).
         device_map: Device mapping strategy (default: "auto").
         hf_token: HuggingFace token (default: None).
+        attn_implementation: Attention implementation to use. If None, automatically
+            uses "flash_attention_2" when flash-attn is installed, otherwise uses default.
+            Can be explicitly set to "flash_attention_2", "sdpa", or "eager".
 
     Returns:
         Tuple of (model, tokenizer).
     """
+    # Auto-detect best attention implementation if not explicitly specified
+    if attn_implementation is None:
+        try:
+            import flash_attn  # noqa: F401
+            attn_implementation = "flash_attention_2"
+        except ImportError:
+            # flash-attn not installed, use SDPA (built into PyTorch 2.0+)
+            attn_implementation = "sdpa"
 
     tokenizer = AutoTokenizer.from_pretrained(model_name, token=hf_token)
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name,
-        dtype=dtype,
-        device_map=device_map,
-        token=hf_token,
-    )
+    
+    model_kwargs = {
+        "dtype": dtype,
+        "device_map": device_map,
+        "token": hf_token,
+    }
+    
+    if attn_implementation is not None:
+        model_kwargs["attn_implementation"] = attn_implementation
+    
+    model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
 
     return model, tokenizer
 
