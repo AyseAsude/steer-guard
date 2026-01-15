@@ -8,7 +8,7 @@ import numpy as np
 from datasets import Dataset
 from sklearn.metrics import roc_auc_score, roc_curve
 
-from steering_vectors import ModelBackend
+from steerex import ModelBackend
 
 from src.utils import apply_chat_template, format_mcq_prompt
 from src.evals.sycophancy.dataset import SycophancySample, SYCOPHANCY_SYSTEM_PROMPT

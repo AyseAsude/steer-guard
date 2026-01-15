@@ -7,7 +7,7 @@ from typing import Any, List
 import torch
 from torch import Tensor
 
-from steering_vectors import ModelBackend
+from steerex import ModelBackend
 
 
 @dataclass

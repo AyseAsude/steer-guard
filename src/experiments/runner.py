@@ -9,7 +9,7 @@ from typing import Dict, List
 import numpy as np
 import torch
 
-from steering_vectors import HuggingFaceBackend, ModelBackend
+from steerex import HuggingFaceBackend, ModelBackend
 
 from src.classifiers.base import BaseClassifier
 from src.classifiers.dot_product import DotProductClassifier

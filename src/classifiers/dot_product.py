@@ -5,7 +5,7 @@ from typing import List, Literal
 import torch
 from torch import Tensor
 
-from steering_vectors import ModelBackend
+from steerex import ModelBackend
 
 from src.classifiers.base import BaseClassifier, ClassificationResult
 

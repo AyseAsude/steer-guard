@@ -3,7 +3,7 @@
 import torch
 from torch import Tensor
 
-from steering_vectors import ModelBackend, VectorSteering
+from steerex import ModelBackend, VectorSteering
 
 from src.classifiers.base import BaseClassifier, ClassificationResult
 

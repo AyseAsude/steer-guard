@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 from torch import Tensor
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from steering_vectors.core import TrainingDatapoint
+from steerex.core import TrainingDatapoint
 
 
 def load_model(
@@ -521,7 +521,7 @@ def get_steered_and_unsteered_logits(
     Returns:
         Tuple of (unsteered_logits, steered_logits), each [vocab_size].
     """
-    from steering_vectors import VectorSteering
+    from steerex import VectorSteering
 
     input_ids = backend.tokenize(prompt)
 

@@ -1,3 +1,3 @@
 # Steer Guard
 
-This repository uses [steering-vectors](https://github.com/steering-vectors/steering-vectors) to implement steering vector extraction methods.
+This repository uses [steerex](https://github.com/AyseAsude/steerex) to implement steering vector extraction methods.
